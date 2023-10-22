@@ -9,7 +9,7 @@ let isForce = false;        // LEDを強制的にオンオフさせるか光セ�
 let mode = true             // モード（自動／強制オン／強制オフ／手動操作中）
 let lastmode = false        // 1秒前のモード　モードが変わったらログを残す
 let tab = "main";
-let lights = [0, 0, 0, 0, 1];
+let lights = "○−○−○";
 const pins = ["26", "19", "13", "6", "5"];
 let temp, humi              // 温度と湿度
 let vp, volt, capa, BT, Ah, pow, cnt, voltage, BTcnt, charge, maxwh, maxv
@@ -38,6 +38,7 @@ $(async function() {
     await getLight(true);
     showLights(lights);
     getTimeMode();
+    clearLightMsg();
     
     setInterval(showTime, 1000);
 
@@ -178,7 +179,8 @@ async function showTime() {
         }
 
         // 1分ごとに光センサーを更新する　ただし自動制御中のみ
-        if (! isForce) {
+        if (true) {
+        //if (! isForce) {
             if (s==30) {
                 getLight(isLightTry);
             }
@@ -211,14 +213,13 @@ function showTryBtn(btnid, bool) {
 }
 
 //////////////////////////////////////////////////////////////////////
+//    ログ
+//////////////////////////////////////////////////////////////////////
 // メッセージを表示する
 function addMsg(txt) {
     logMsg = $("#logbox").html();
     logMsg += txt + "<br>";
-    logTxt = $("#logbox").text();
-    logTxt += txt;
     $("#logbox").html(logMsg);
-    console.log(txt);
 }
 
 // メッセージを全削除する
@@ -226,13 +227,26 @@ function clearMsg() {
     $("#logbox").html("");
 }
 
+// センサーログを表示する
+function addLightLog(txt) {
+    logMsg = $("#lightlog").html();
+    logMsg += txt + "<br>";
+    $("#lightlog").html(logMsg);
+}
+
+// 光センサーログを削除する
+function clearLightMsg() {
+    $("#lightlog").html("光センサー　6回測定し、次の点灯消灯を判断します<br>");
+}
+
+
 //////////////////////////////////////////////////////////////////////
 //    温湿度
 //////////////////////////////////////////////////////////////////////
 async function getHumi(isTry) {
     await $.ajax("/getHumi", {
         type: "post",
-        data: {"isTry": isTry},               // テストか本番かのbool値をisTryとして送る
+        data: {"isTry": isTry},                 // テストか本番かのbool値をisTryとして送る
     }).done(function(data) {
         const dict = JSON.parse(data);
         if (dict["temp"] != "N/A") {            // センサー値取得できていたら
@@ -254,110 +268,50 @@ async function getHumi(isTry) {
 //////////////////////////////////////////////////////////////////////
 //    日光
 //////////////////////////////////////////////////////////////////////
-// 本番かトライかを判定して日光を取得する
-async function get_or_try_Sunlight() {
-    if (isLightTry) {
-        await trySunlight().then( result => {
-            lamps = result;
-        });
-    } else {
-        await getSunlight().then( result => {
-            lamps = result;
-        });
-    }
-    var lamp_cnt = 0;
-    lamps.forEach(elm => {
-        lamp_cnt += elm
-    });
-
-    // 光センサーが3未満 かつ 朝夕用のバッテリー残量がある場合、点灯
-    if (lamp_cnt<3) {
-        console.log (wh + " "+ red3h);
-        if (wh > red3h) {
-            if (isAuto) {addMsg(time + "　育成LED点灯");}
-            isLED = true;
-        } else {
-            if (isAuto) {addMsg(time + "　バッテリ残量少ないので育成LED点灯しない");}
-            isLED = false;
-        }
-    } else {
-        isLED = false;
-        if (isAuto) {addMsg(time + "　十分明るいので育成LED消灯");}
-    }
-    showLights(lamps);
-    showLedLamp(isLED);
-    enpowerLED(isLED);
-}
-
-// 日光（トライ）
-async function trySunlight() {
-    lamps = [];
-    for (i=1; i<=5; i++) {
-        let val = Math.trunc(Math.random()*2);
-        lamps.push(val);
-    }
-    return lamps
-}
-
-// 日光（本番）
-async function getSunlight() {
-    await $.ajax("/getSunlight", {
-        type: "POST",
-    }).done(function(data) {
-        var dict = JSON.parse(data);
-        if (dict["temp"] != "N/A") {
-            temp = dict["temp"];
-        }
-        if (dict["humi"] != "N/A") {
-            humi = dict["humi"];
-        }
-    }).fail(function() {
-        console.log("温湿度取得失敗");
-    });
-};
-
-
 async function getLight(isTry) {
     await $.ajax("/getLight", {
         type: "post",
         data: {"isTry": isTry},                 // テストか本番かのbool値をisTryとして送る
     }).done(function(data) {
         const dict = JSON.parse(data);
-        if (dict["lights"] != "N/A") {          // センサー値取得できていたら
-            lights = dict["lights"];
-            console.log(lights);
-            showLights(lights);
-            const cnt = lights.reduce(function(sum, elm) {  // reduceコールバック関数で要素の合計を出す
-                return sum + elm;
-            }, 0);
-            if (cnt < 3) {
-                isLED = true;
-            } else {
-                isLED = false;
+        console.log(dict);
+        try {                                   // センサー値取得できていたら
+            if (dict["light_cnt"]==0) {         // 0回目で
+                clearLightMsg();                // メッセージをクリアする
             }
-            enpowerLED(isLED);
-
-            addMsg(time + "　光センサー更新");
-        } else {                                // センサー値取得できなかったら
+            addLightLog(time + "　#" + (dict["light_cnt"]+1) + "　" + dict["log"]);
+            showLights(dict["log"]);
+            if (dict["light_cnt"]==5) {         // 6回センサー値を測定したら
+                if (dict["light_sum"] > 8) {    // 点灯消灯判断する
+                    addLightLog("　十分明るいので点灯しない")
+                    isLED = false;
+                } else {
+                    addLightLog("　明るさが足りないので点灯する")
+                    isLED = false;
+                }
+                enpowerLED(isLED);
+            }
+        } catch(e) {                            // センサー値取得できなかったら
             console.log("光センサー　センサー失敗");
         }
     }).fail(function() {                        // ajaxのリターン失敗したら更新しない
         console.log("光センサー　通信失敗");
     });
-}
+};
 
 // 光センサーの状態を表示する関数
-function showLights(array) {
-    $.each(array,function(index,val){
-        var color="";
-        if (val) {
+function showLights(txt) {
+    const arr = txt.split("");
+    for (let i=0; i<arr.length; i++) {
+        let color="";
+        if (arr[i]=="○") {
             color = "red";
         } else {
             color = "gray";
         }
-        $("#lamp" + index).css("color",color);
-    });
-}
+        $("#lamp" + i).css("color",color);
+    };
+};
 
 
 // 育成LEDを光らせる
@@ -585,10 +539,7 @@ function showBatt(bp) {
     $("#calc_totalwh").html(wh+"Wh+"+charge+"Wh="+totalwh+"Wh");
     $("totalwh").html(totalwh);
     $("#calc_next").html(pow+"W*"+cnt+"*1h="+need_next+"Wh");
-    $("#meter-bar").css("width", bp+"%");
-    $("#bar_red").css("width", redp+"%")
-    $("#bar_yellow").css("width", redp+"%")
-    $("#bar_green").css("width", redp+"%")
+    $("#batt-black").css("width", (100-bp)+"%");
 }
 
 

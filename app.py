@@ -26,6 +26,8 @@ GPIO.setup(led_pin, GPIO.OUT)
 for pin in light_pins:
     GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
+light_cnt = 0               # 光センサー計測回数　6回でリセット
+light_sum = 0               # 光センサーオフの累計
 
 battery = { "Ah": 100,
             "power": 12,    # LED消費電力（W）
@@ -34,7 +36,6 @@ battery = { "Ah": 100,
             "BTcnt": 8,     # バッテリー個数
             "charge": 1500  # ソーラー＋風力での発電（Wh）
             }
-
 
 # 設定ファイル
 class Config():
@@ -151,22 +152,30 @@ def getHumi():
 # 光センサー
 @app.route("/getLight", methods=["POST"])
 def getLight():
+    global light_cnt, light_sum, light_log
+    light_cnt = (light_cnt+1) % 6
+    if light_cnt == 0:
+        light_sum = 0
+        light_log = ""
+
     if request.method == "POST":
         is_try = request.form["isTry"]
         lights = []
-        dict = {}
         if is_try=="true":               # true/falseは文字列として送られてくる
             for _ in light_pins:
                 lights.append(random.choice([1, 0]))
-            dict["lights"] = lights
-            addLog(f"光センサー（トライ）: {dict['lights']}")
-            print(f"{getTime()}　光センサー（トライ）:{dict}")
         else:
             for pin in light_pins:
                 lights.append(GPIO.input(pin))
-            dict["lights"] = lights
-            addLog(f"光センサー（本番）: {dict['lights']}")
-            print(f"{getTime()}　光センサー（本番）:{dict}")
+        
+        light_sum += sum(lights)
+        log = ""
+        for light in lights:
+            log += "○" if light==1 else "−"
+        dict = {}
+        dict["light_sum"] = light_sum
+        dict["log"] = log
+        dict["light_cnt"] = light_cnt
         return json.dumps(dict)
 
 
