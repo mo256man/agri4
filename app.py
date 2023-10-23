@@ -42,7 +42,8 @@ class Config():
     def __init__(self):
         self.filename = "config.ini"
         self.parser = configparser.ConfigParser()
-    
+        self.parser.optionxform = str       # 大文字小文字を区別する
+
     def read(self):
         # 設定ファイルが存在しない場合、デフォルト設定を新規作成する
         if not os.path.exists(self.filename):

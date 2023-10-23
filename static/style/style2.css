@@ -281,13 +281,13 @@ div.config_bg {
     position: fixed;
     left: 0;
     top: 0;
-    z-index: 80;
+    z-index: 2;
 }
 
 div.config_window {
     visibility: hidden;
     background-color: white;
-    font-size: large;
+    font-size: x-large;
     width: 50%;
     height: 300px;
     position: fixed;
@@ -296,5 +296,15 @@ div.config_window {
     transform: translate(-50%, -50%);
     border-radius: 10px;
     padding: 20px;
-    z-index: 90;
+    z-index: 3;
+}
+
+div.caution {
+    font-size: small;
+    text-align: center;
+}
+
+div.confirm {
+    margin: 0 0 0 auto;
+    text-align:right;
 }

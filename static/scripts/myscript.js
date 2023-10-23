@@ -1,21 +1,22 @@
 // グローバル変数
 let isAuto =true;           // 自動か各個か
-let isHumiTry = true;       // 温湿度計がトライか本番か
-let isBattTry = true;       // バッテリ電圧計がトライか本番か
-let isLightTry = true;      // 光センサーがトライか本番か
+let isHumiTry = false;      // 温湿度計がトライか本番か
+let isBattTry = false;      // バッテリ電圧計がトライか本番か
+let isLightTry = false;     // 光センサーがトライか本番か
 let isLEDTry = true;        // 育成LEDがトライか本番か
 let isLED = false;          // 育成LEDを光らせるか
 let isForce = false;        // LEDを強制的にオンオフさせるか光センサーで制御するか
-let mode = ""               // モード（自動／強制オン／強制オフ／手動操作中）
-let lastmode = ""           // 1秒前のモード　モードが変わったらログを残す
+let mode = true             // モード（自動／強制オン／強制オフ／手動操作中）
+let lastmode = false        // 1秒前のモード　モードが変わったらログを残す
 let tab = "main";
-let lights = [0, 0, 0, 0, 1];
+let lights = "○−○−○";
 const pins = ["26", "19", "13", "6", "5"];
 let temp, humi              // 温度と湿度
 let vp, volt, capa, BT, Ah, pow, cnt, voltage, BTcnt, charge, maxwh, maxv
 let redp, yellowp, totalwh
-let sunrise_time, sunset_time
-let morning_light_time, evening_light_time
+let sunrise_time, sunset_time               // 日の出日の入り時刻
+let morning_start_time, evening_start_time  // 強制点灯開始時刻
+let morning_end_time, evening_end_time      // 強制点灯終了時刻
 let wh
 let humiID      // setInterval()でgetHumiする際のID
 let voltID      // setInterval()でgetVoltする際のID
@@ -23,21 +24,12 @@ let now, today, time
 let logMsg="";
 let logTxt="";
 let bp;
-
+    
 $(async function() {
     // 読み込み完了後に一度だけ実行する関数
-    getNow();
-    //tab = getTab();
-    clearMsg();
-    addMsg(time+"　開始")
-    await getEphem();
-    await getBattSetting();
-    await getBatt(true);
-    await getHumi(true);
-    await getLight(true);
-    showLights(lights);
-    getTimeMode();
-    
+    await do1st();
+
+   
     setInterval(showTime, 1000);
 
     // 自動・各個　切り替え
@@ -92,6 +84,25 @@ $(async function() {
         }
     })
 
+    // 設定画面を出す
+    $("#btnConfig").on("click", function(){
+        getConfig();
+        $(".config_bg").css("visibility", "visible");
+        $(".config_window").css("visibility", "visible");
+    });
+
+
+    // 設定変更ボタンを押す
+    $("#setConfig").on("click", function(){
+        setConfig();
+    });
+
+    // 設定画面を閉じる
+    $(".config_bg").on("click", function(){
+        $(".config_bg").css("visibility", "hidden");
+        $(".config_window").css("visibility", "hidden");
+    });
+
 
     // トライボタン切り替え
     $(".btnTry").on('click', function(){
@@ -121,6 +132,29 @@ $(async function() {
 });
 
 
+//////////////////////////////////////////////////////////////////////
+// 最初に1回だけ実行する関数
+//////////////////////////////////////////////////////////////////////
+async function do1st() {
+    // インプットボックスにjQuery keypadを設定する
+    const kbOpt = {showAnim: "slideDown", showOptions: null, duration: "fast", showOn:"button"};    // 数値キーパッドのオプション
+    const ids = ["#lat", "#lon", "#elev", "#morning_offset", "#evening_offset", "#morning_minutes", "#evening_minutes"];    // キーパッドを設定するid
+    $.each(ids, function(i, id){
+        $(id).keypad(kbOpt);
+    });
+    
+    getNow();
+    clearMsg();
+    addMsg(time+"　開始")
+    await getEphem();
+    await getBattSetting();
+    await getBatt(true);
+    await getHumi(true);
+    await getLight(true);
+    showLights(lights);
+    getTimeMode();
+    clearLightMsg();
+}
 
 //////////////////////////////////////////////////////////////////////
 // 表示しているタブを取得する
@@ -152,13 +186,14 @@ async function showTime() {
         }
 
         // 10分ごとバッテリ残容量を更新する
-        if (m==20 && s==10) {
+        if (s==10) {
             addMsg(time + "　バッテリ残容量更新");
             bp = getBatt(isBattTry);
         }
 
         // 1分ごとに光センサーを更新する　ただし自動制御中のみ
-        if (! isForce) {
+        if (true) {
+        //if (! isForce) {
             if (s==30) {
                 getLight(isLightTry);
             }
@@ -191,14 +226,13 @@ function showTryBtn(btnid, bool) {
 }
 
 //////////////////////////////////////////////////////////////////////
+//    ログ
+//////////////////////////////////////////////////////////////////////
 // メッセージを表示する
 function addMsg(txt) {
     logMsg = $("#logbox").html();
     logMsg += txt + "<br>";
-    logTxt = $("#logbox").text();
-    logTxt += txt;
     $("#logbox").html(logMsg);
-    console.log(txt);
 }
 
 // メッセージを全削除する
@@ -206,13 +240,26 @@ function clearMsg() {
     $("#logbox").html("");
 }
 
+// センサーログを表示する
+function addLightLog(txt) {
+    logMsg = $("#lightlog").html();
+    logMsg += txt + "<br>";
+    $("#lightlog").html(logMsg);
+}
+
+// 光センサーログを削除する
+function clearLightMsg() {
+    $("#lightlog").html("光センサー　6回測定し、次の点灯消灯を判断します<br>");
+}
+
+
 //////////////////////////////////////////////////////////////////////
 //    温湿度
 //////////////////////////////////////////////////////////////////////
 async function getHumi(isTry) {
     await $.ajax("/getHumi", {
         type: "post",
-        data: {"isTry": isTry},               // テストか本番かのbool値をisTryとして送る
+        data: {"isTry": isTry},                 // テストか本番かのbool値をisTryとして送る
     }).done(function(data) {
         const dict = JSON.parse(data);
         if (dict["temp"] != "N/A") {            // センサー値取得できていたら
@@ -234,110 +281,50 @@ async function getHumi(isTry) {
 //////////////////////////////////////////////////////////////////////
 //    日光
 //////////////////////////////////////////////////////////////////////
-// 本番かトライかを判定して日光を取得する
-async function get_or_try_Sunlight() {
-    if (isLightTry) {
-        await trySunlight().then( result => {
-            lamps = result;
-        });
-    } else {
-        await getSunlight().then( result => {
-            lamps = result;
-        });
-    }
-    var lamp_cnt = 0;
-    lamps.forEach(elm => {
-        lamp_cnt += elm
-    });
-
-    // 光センサーが3未満 かつ 朝夕用のバッテリー残量がある場合、点灯
-    if (lamp_cnt<3) {
-        console.log (wh + " "+ red3h);
-        if (wh > red3h) {
-            if (isAuto) {addMsg(time + "　育成LED点灯");}
-            isLED = true;
-        } else {
-            if (isAuto) {addMsg(time + "　バッテリ残量少ないので育成LED点灯しない");}
-            isLED = false;
-        }
-    } else {
-        isLED = false;
-        if (isAuto) {addMsg(time + "　十分明るいので育成LED消灯");}
-    }
-    showLights(lamps);
-    showLedLamp(isLED);
-    enpowerLED(isLED);
-}
-
-// 日光（トライ）
-async function trySunlight() {
-    lamps = [];
-    for (i=1; i<=5; i++) {
-        let val = Math.trunc(Math.random()*2);
-        lamps.push(val);
-    }
-    return lamps
-}
-
-// 日光（本番）
-async function getSunlight() {
-    await $.ajax("/getSunlight", {
-        type: "POST",
-    }).done(function(data) {
-        var dict = JSON.parse(data);
-        if (dict["temp"] != "N/A") {
-            temp = dict["temp"];
-        }
-        if (dict["humi"] != "N/A") {
-            humi = dict["humi"];
-        }
-    }).fail(function() {
-        console.log("温湿度取得失敗");
-    });
-};
-
-
 async function getLight(isTry) {
     await $.ajax("/getLight", {
         type: "post",
         data: {"isTry": isTry},                 // テストか本番かのbool値をisTryとして送る
     }).done(function(data) {
         const dict = JSON.parse(data);
-        if (dict["lights"] != "N/A") {          // センサー値取得できていたら
-            lights = dict["lights"];
-            console.log(lights);
-            showLights(lights);
-            const cnt = lights.reduce(function(sum, elm) {  // reduceコールバック関数で要素の合計を出す
-                return sum + elm;
-            }, 0);
-            if (cnt < 3) {
-                isLED = true;
-            } else {
-                isLED = false;
+        console.log(dict);
+        try {                                   // センサー値取得できていたら
+            if (dict["light_cnt"]==0) {         // 0回目で
+                clearLightMsg();                // メッセージをクリアする
             }
-            enpowerLED(isLED);
-
-            addMsg(time + "　光センサー更新");
-        } else {                                // センサー値取得できなかったら
+            addLightLog(time + "　#" + (dict["light_cnt"]+1) + "　" + dict["log"]);
+            showLights(dict["log"]);
+            if (dict["light_cnt"]==5) {         // 6回センサー値を測定したら
+                if (dict["light_sum"] > 8) {    // 点灯消灯判断する
+                    addLightLog("　十分明るいので点灯しない")
+                    isLED = false;
+                } else {
+                    addLightLog("　明るさが足りないので点灯する")
+                    isLED = false;
+                }
+                enpowerLED(isLED);
+            }
+        } catch(e) {                            // センサー値取得できなかったら
             console.log("光センサー　センサー失敗");
         }
     }).fail(function() {                        // ajaxのリターン失敗したら更新しない
         console.log("光センサー　通信失敗");
     });
-}
+};
 
 // 光センサーの状態を表示する関数
-function showLights(array) {
-    $.each(array,function(index,val){
-        var color="";
-        if (val) {
+function showLights(txt) {
+    const arr = txt.split("");
+    for (let i=0; i<arr.length; i++) {
+        let color="";
+        if (arr[i]=="○") {
             color = "red";
         } else {
             color = "gray";
         }
-        $("#lamp" + index).css("color",color);
-    });
-}
+        $("#lamp" + i).css("color",color);
+    };
+};
 
 
 // 育成LEDを光らせる
@@ -402,6 +389,9 @@ function showLedLamp(flag) {
 //    暦
 //////////////////////////////////////////////////////////////////////
 async function getEphem() {
+    $("#date").text(dayjs().format("M月D日"))
+    await getConfig();                                      // あらためて設定を読み込む
+    console.log("暦取得するぞ");
     await $.ajax("/getEphem", {
         type: "POST",
     }).done(function(data) {
@@ -414,10 +404,24 @@ async function getEphem() {
         $("#moon_image").attr("src", dict["moon_image"]);
 
         // 日の出日の入り時刻から育成LED点灯消灯の時刻を計算する
-        morning_light_time = dayjs(today+" "+sunrise_time).add(1.5, "h").format("HH:mm");
-        evening_light_time = dayjs(today+" "+sunset_time).add(-1.5, "h").format("HH:mm");
-        $("#morning_light_time").text(morning_light_time);
-        $("#evening_light_time").text(evening_light_time);
+        // まずはdayjsとして計算する
+        const morning_offset = Number($("#morning_offset").val());
+        const evening_offset = Number($("#evening_offset").val());
+        const morning_minutes = Number($("#morning_minutes").val());
+        const evening_minutes = Number($("#evening_minutes").val());
+        morning_start_time = dayjs(today+" "+sunrise_time).add(morning_offset, "m");
+        morning_end_time = morning_start_time.add(morning_minutes, "m");
+        evening_end_time = dayjs(today+" "+sunset_time).add(-evening_offset, "m");
+        evening_start_time = evening_end_time.add(-evening_minutes, "m");
+        // 次にそれを文字列にする
+        morning_start_time = morning_start_time.format("HH:mm");
+        morning_end_time = morning_end_time.format("HH:mm");
+        evening_start_time = evening_start_time.format("HH:mm");
+        evening_end_time = evening_end_time.format("HH:mm");
+        $("#morning_start_time").text(morning_start_time);
+        $("#evening_start_time").text(evening_start_time);
+        $("#morning_end_time").text(morning_end_time);
+        $("#evening_end_time").text(evening_end_time);
         console.log(dayjs(), "暦取得成功");
     }).fail(function() {
         console.log("暦取得失敗");
@@ -427,43 +431,58 @@ async function getEphem() {
 function getTimeMode() {
     getNow();
     let msg = ""
+    const now = time.slice(0, 5)            // HH:mm:ss を HH:mm にする
+    // 現在がどの時刻モードかを調べる　これは毎秒おこなう必要がある
     switch (true) {                         // ここは優先順位として大きい値から判断していく
-        case time > sunset_time:            // 日の入り以降は強制OFF
-            mode = "強制OFF";
-            msg = "　夜です　";
-            isForce = true;
-            isLED = false;
-            enpowerLED(isLED);
+        case now >= evening_end_time:       // 日の入り以降は強制OFF
+            mode = "夜";
             break;
-        case time > evening_light_time:     // 日の入り1.5H前以降は強制ON
-            mode = "強制ON";
-            msg = "　夕方です　";
-            isForce = true;
-            isLED = true;
-            enpowerLED(isLED);
+        case now >= evening_start_time:     // 日の入り1.5H前以降は強制ON
+            mode = "夕方";
             break;
-        case time > morning_light_time:     // 日の出1.5H後以降は自動制御
-            mode = "自動制御";
-            msg = "　昼です　";
-            isForce = false;
+        case now >= morning_end_time:       // 日の出1.5H後以降は自動制御
+            mode = "昼";
             break;
-        case time > sunrise_time:           // 日の出以降は強制ON
-            mode = "強制ON";
-            msg = "　朝です　";
-            isForce = true;
-            isLED = true;
-            enpowerLED(isLED);
+        case now >= morning_start_time:     // 日の出以降は強制ON
+            mode = "朝";
             break;
         default:                            // それ以前（0時以降）は強制OFF
-            mode = "強制OFF";
-            isForce = true;
-            isLED = false;
-            enpowerLED(isLED);
+            mode = "夜";
     };
-    $("#mode").text(mode);
+
+    // 時刻モードが変更になったときのみ以下の処理をおこなう
     if (mode != lastmode) {
+        switch (mode) {
+            case "夜":
+                //mode = "強制OFF";
+                msg = "　夜です　";
+                isForce = true;
+                isLED = false;
+                enpowerLED(isLED);
+                break;
+            case "夕方":
+                //mode = "強制ON";
+                msg = "　夕方です　";
+                isForce = true;
+                isLED = true;
+                enpowerLED(isLED);
+                break;
+            case "昼":
+                //mode = "自動制御";
+                msg = "　昼です　";
+                isForce = false;
+                break;
+            case "朝":
+                //mode = "強制ON";
+                msg = "　朝です　";
+                isForce = true;
+                isLED = true;
+                enpowerLED(isLED);
+                break;
+        };
         addMsg(time + msg + "モード変更　" + mode);
     }
+    $("#mode").text(mode);
     lastmode = mode;
 }
 
@@ -532,9 +551,55 @@ function showBatt(bp) {
     $("#calc_totalwh").html(wh+"Wh+"+charge+"Wh="+totalwh+"Wh");
     $("totalwh").html(totalwh);
     $("#calc_next").html(pow+"W*"+cnt+"*1h="+need_next+"Wh");
-    $("#meter-bar").css("width", bp+"%");
-    $("#bar_red").css("width", redp+"%")
-    $("#bar_yellow").css("width", redp+"%")
-    $("#bar_green").css("width", redp+"%")
+    $("#batt-black").css("width", (100-bp)+"%");
 }
 
+
+//////////////////////////////////////////////////////////////////////
+//    設定
+//////////////////////////////////////////////////////////////////////
+// 設定ファイルを取得する関数
+async function getConfig() {
+    await $.ajax("/getConfig", {
+        type: "POST",
+    }).done(function(data) {
+        const dict = JSON.parse(data);
+        $("#place").val(dict["place"]);
+        $("#lat").val(dict["lat"]);
+        $("#lon").val(dict["lon"]);
+        $("#elev").val(dict["elev"]);
+        $("#morning_offset").val(dict["morning_offset"]);
+        $("#evening_offset").val(dict["evening_offset"]);
+        $("#morning_minutes").val(dict["morning_minutes"]);
+        $("#evening_minutes").val(dict["evening_minutes"]);
+        console.log("設定ファイル取得成功");
+        console.log(dict);
+    }).fail(function() {
+        console.log("設定ファイル取得失敗");
+    });
+};
+
+// 設定ファイルを変更する関数
+async function setConfig() {
+    const place = $("#place").val();
+    const lat = $("#lat").val();
+    const lon = $("#lon").val();
+    const elev = $("#elev").val();
+    const morning_offset = $("#morning_offset").val();
+    const evening_offset = $("#evening_offset").val();
+    const morning_minutes = $("#morning_minutes").val();
+    const evening_minutes = $("#evening_minutes").val();
+    const dict = {"place": place, "lat": lat, "lon": lon, "elev": elev,
+                  "morning_offset": morning_offset, "evening_offset": evening_offset,
+                  "morning_minutes": morning_minutes, "evening_minutes": evening_minutes};
+    console.log("設定変更" + dict)
+    await $.ajax("/setConfig", {
+        type: "POST",
+        data: dict,
+    }).done(function(data) {
+        console.log("設定ファイル変更成功");
+        console.log(dict);
+    }).fail(function() {
+        console.log("設定ファイル変更失敗");
+    });
+};

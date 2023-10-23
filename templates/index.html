@@ -4,8 +4,11 @@
 <script type="text/javascript" src="{{ url_for('static', filename='scripts/jquery.js') }}"></script>
 <script type="text/javascript" src="{{url_for('static', filename='scripts/dayjs.min.js')}}"></script>
 <script type="text/javascript" src="{{url_for('static', filename='scripts/myscript.js')}}"></script>
+<script type="text/javascript" src="{{url_for('static', filename='scripts/jquery.plugin.js')}}"></script>
+<script type="text/javascript" src="{{url_for('static', filename='scripts/jquery.keypad.js')}}"></script>
 <link rel="stylesheet" type="text/css" href="{{url_for('static', filename='style/style2.css')}}">
 <link rel="stylesheet" type="text/css" href="{{url_for('static', filename='style/style_tab.css')}}">
+<link rel="stylesheet" type="text/css" href="{{url_for('static', filename='style/jquery.keypad.css')}}">
 <title>AgriBecky</title>
 </head>
 <body>
@@ -13,6 +16,7 @@
 <div class="config_bg"></div>
 <div class="config_window">
     <form>
+        <div class="caution">設定ウィンドウの外側をクリックするとこの画面は閉じます</div>
         <b>設定</b><br>
         <label for="place">　地域：<input type="text" name="place" id="place" class="w1 left"></label><br>
         <label for="lat">　緯度：<input type="text" name="lat" id="lat" class="w1 right"></label><br>
@@ -20,12 +24,11 @@
         <label for="elev">　標高：<input type="text" name="elev" id="elev" class="w1 right"></label><br>
         <br>
         <b>強制点灯時間</b><br>
-        <label>　日の出の　<input type="text" id="morning_offset" class="w05 right" value="{{config['morning_offset']}}"></label>分後からの<input type="text" id="morning_minutes" class="w05 right" value="{{config['morning_minutes']}}">分間<br>
-        <label>　日の入りの<input type="text" id="evening_offset" class="w05 right" value="{{config['evening_offset']}}"></label>分前までの<input type="text" id="evening_minutes" class="w05 right" value="{{config['evening_minutes']}}">分間<br>
-        <button type="submit" id="setConfig">決定</button>
+        <label>　日の出の　<input type="text" id="morning_offset" class="w05 right" value="{{config['morning_offset']}}"></label> <label>分後からの<input type="text" id="morning_minutes" class="w05 right" value="{{config['morning_minutes']}}"></label>分間<br>
+        <label>　日の入りの<input type="text" id="evening_offset" class="w05 right" value="{{config['evening_offset']}}"></label> <label>分前までの<input type="text" id="evening_minutes" class="w05 right" value="{{config['evening_minutes']}}"></label>分間<br>
+        <br>
+        <div class="confirm"><button type="submit" id="setConfig">決定</button></div>
     </form>
-<br>
-ウィンドウ外側をクリックするとこの画面は閉じます
 </div>
 <!-- メイン画面 !-->
 <table class="top">
