@@ -1,3 +1,4 @@
+# coding: utf-8
 import ctypes
 import sys
 import cdio
@@ -6,27 +7,56 @@ import datetime
 
 class Contec():
     def __ini__(self):
-        self.DEV_NAME = "DIO000"
+        self.DEV_NAME = "DIO000"                            # デバイス名
+        self.port_no = ctypes.c_short(0)                    # ポートNo
+        input_pins = [1, 2, 3, 4, 5]		                # 光センサーが接続されているコンテックの入力コネクタのピン番号
+        output_pins = [1, 2, 3, 4]                          # リレーが接続されているコンテックの出力コネクタのピン番号
+
         self.dio_id = ctypes.c_short()
         self.io_data = ctypes.c_ubyte()
-        self.port_no = ctypes.c_short(0)
         self.bit_no = ctypes.c_short()
         self.err_str = ctypes.create_string_buffer(256)
-        lret = cdio.DioInit(DEV_NAME.encode(), ctypes.byref(dio_id))
-        port_no = ctypes.c_short(0)
-        if lret != cdio.DIO_ERR_SUCCESS:
-            cdio.DioGetErrorString(lret, err_str)
-            print(f"DioInit = {lret}: {err_str.value.decode('utf-8')}")
+
+        self.input_bits = [8-pin for pin in input_pins]     # 光センサーが接続されているコンテックの入力コネクタのピンのビット
+        self.output_bits = [8-pin for pin in output_bits]   # リレーが接続されているコンテックの出力コネクタのピンのビット
+        
+        self.lights = []                                    # 5個の光センサーの状態（の初期値）
+        self.relays = [1, 1, 1, 1]                          # 4個のリレーへの出力（全出力）
+
+        # ドライバ初期化
+        ret = cdio.DioInit(self.DEV_NAME.encode(), ctypes.byref(self.dio_id))
+        if ret != cdio.DIO_ERR_SUCCESS:
+            cdio.DioGetErrorString(ret, self.err_str)
+            print(f"DioInit = {ret}: {self.err_str.value.decode('utf-8')}")
             sys.exit()
 
+    def num2array(self, num):
+        # """8ビットの入力データを光センサーオンオフのリストとして返す"""
+        result = []
+        for bit in self.input_bits:
+            ans = 1 if num & (1 << bit) else 0	            # 1をbit回ビットシフトした値との論理積を取り、0以外なら1を、0なら0を返す
+            result.append(ans)
+        return result
+
     def input(self):
-        lret = cdio.DioInpByte(self.dio_id, self.port_no, self.ctypes.byref(io_data))
-        if lret == cdio.DIO_ERR_SUCCESS:
-            cdio.DioGetErrorString(lret, err_str)
-            print(f"{datetime.datetime.now().strftime('%H:%M:%S')} : 十六進数で 0x{io_data.value:02x}、二進数で 0b{format(io_data.value, '08b')}")
+        ret = cdio.DioInpByte(self.dio_id, self.port_no, ctypes.byref(self.io_data))
+        if ret == cdio.DIO_ERR_SUCCESS:
+            arr = num2array(self, self.io_data.value)
+            return arr
         else:
             cdio.DioGetErrorString(lret, err_str)
             print(f"DioInpByte = {lret}: {err_str.value.decode('utf-8')}")
+            return []
+
+    def output(self, bool):
+        io_data = ctypes.c_ubyte(255) if bool else ctypes.c_ubyte(0)
+        ret = cdio.DioOutByte(self.dio_id, self.port_no, io_data)
+        if ret == cdio.DIO_ERR_SUCCESS:
+            cdio.DioGetErrorString(lret, err_str)
+            print(f'DioOutByte port = {port_no.value}: data = 0x{io_data.value:02x}')
+        else:
+            cdio.DioGetErrorString(lret, err_str)
+            print(f"DioOutByte = {lret}: {err_str.value.decode('utf-8')}")        
 
 def light_on(bool):
     dio_id = ctypes.c_short()
@@ -49,53 +79,23 @@ def light_on(bool):
         print(f"DioOutByte = {lret}: {err_str.value.decode('utf-8')}")            
 
 
+contec = Contec()
+
 def main():
-    dio_id = ctypes.c_short()
-    io_data = ctypes.c_ubyte()
-    port_no = ctypes.c_short()
-    bit_no = ctypes.c_short()
-    err_str = ctypes.create_string_buffer(256)
+    while True:
+        input_array = contec.input()
+        print(f"{datetime.datetime.now().strftime('%H:%M:%S')}")
+        for i, bit in enumerate(arr):
+            ans = "ON" if bit else "OFF"
+            print(f"{i+1}番の光センサー: {ans}")
 
-    # ドライバ初期化
-    DEV_NAME = "DIO000"
-    lret = cdio.DioInit(DEV_NAME.encode(), ctypes.byref(dio_id))
-    port_no = ctypes.c_short(0)
-    if lret != cdio.DIO_ERR_SUCCESS:
-        cdio.DioGetErrorString(lret, err_str)
-        print(f"DioInit = {lret}: {err_str.value.decode('utf-8')}")
-        sys.exit()
-
-    # メインループ
-    try:
-        while True:
-            lret = cdio.DioInpByte(dio_id, port_no, ctypes.byref(io_data))
-            if lret == cdio.DIO_ERR_SUCCESS:
-                cdio.DioGetErrorString(lret, err_str)
-                print(f"{datetime.datetime.now().strftime('%H:%M:%S')} : 十六進数で 0x{io_data.value:02x}、二進数で 0b{format(io_data.value, '08b')}")
-            else:
-                cdio.DioGetErrorString(lret, err_str)
-                print(f"DioInpByte = {lret}: {err_str.value.decode('utf-8')}")
-
-            cnt = bin(io_data.value).count("1")
-            print(f"光センサー　点灯数＝{cnt}")
-            if cnt < 2:
-                print("　→　十分明るい")
-                light_on(False)
-            else:
-                print("　→　暗いのでLED点灯する")
-                light_on(True)
-            time.sleep(1)
-
-    except KeyboardInterrupt:
-        print("\n終了")
-        # ドライバ終了
-        lret = cdio.DioExit(dio_id)
-        if lret != cdio.DIO_ERR_SUCCESS:
-            cdio.DioGetErrorString(lret, err_str)
-            print(f"DioExit = {lret}: {err_str.value.decode('utf-8')}")
-        # プログラム終了
-        time.sleep(3)
-        sys.exit()
+        light_cnt = sum(arr)
+        if light_cnt < 2:
+            print("暗いので点灯")
+            self.enpower_relay(True)
+        else:
+            print("明るいので消灯")
+            self.enpower_relay(False)        
 
 if __name__ == "__main__":
     main()
